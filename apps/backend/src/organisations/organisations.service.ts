@@ -269,7 +269,22 @@ export class OrganisationsService {
     });
   }
 
-  async updateMember(orgId: string, userId: string, data: { role?: string; status?: string }) {
+  async updateMember(orgId: string, requestingUserId: string, userId: string, data: { role?: string; status?: string }) {
+    // Check if requesting user is org admin
+    const requestingMember = await this.prisma.organisationMember.findUnique({
+      where: {
+        organisationId_userId: {
+          organisationId: orgId,
+          userId: requestingUserId,
+        },
+      },
+    });
+
+    if (!requestingMember || requestingMember.role !== 'admin') {
+      throw new BadRequestException('Only organisation admins can change member roles');
+    }
+
+    // Find the member to update
     const member = await this.prisma.organisationMember.findUnique({
       where: {
         organisationId_userId: {
