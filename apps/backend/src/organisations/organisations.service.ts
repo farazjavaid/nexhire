@@ -231,24 +231,42 @@ export class OrganisationsService {
       where: { organisationId: orgId },
       include: {
         user: {
-          select: { id: true, email: true, name: true },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            roles: {
+              include: { role: true }
+            }
+          },
         },
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    return members.map((m) => ({
-      userId: m.userId,
-      firstName: m.user.name.split(' ')[0],
-      lastName: m.user.name.split(' ').slice(1).join(' ') || '',
-      email: m.user.email,
-      avatarUrl: null, // TODO: Add profile image
-      role: m.role,
-      status: m.status,
-      joinedAt: m.createdAt,
-      createdAt: m.createdAt,
-      approvalStatus: null, // TODO: Add interviewer approval status
-    }));
+    return members.map((m) => {
+      // Get interviewer approval status if user has interviewer role
+      let approvalStatus = null;
+      if (m.role === 'interviewer') {
+        const interviewerRole = m.user.roles.find(ur => ur.role.name === 'interviewer');
+        if (interviewerRole) {
+          approvalStatus = interviewerRole.status;
+        }
+      }
+
+      return {
+        userId: m.userId,
+        firstName: m.user.name.split(' ')[0],
+        lastName: m.user.name.split(' ').slice(1).join(' ') || '',
+        email: m.user.email,
+        avatarUrl: null, // TODO: Add profile image
+        role: m.role,
+        status: m.status,
+        joinedAt: m.createdAt,
+        createdAt: m.createdAt,
+        approvalStatus: approvalStatus, // ✅ Now fetches from UserRole.status
+      };
+    });
   }
 
   async updateMember(orgId: string, userId: string, data: { role?: string; status?: string }) {
@@ -265,6 +283,7 @@ export class OrganisationsService {
       throw new NotFoundException('Member not found');
     }
 
+    // Update organisation member
     await this.prisma.organisationMember.update({
       where: {
         organisationId_userId: {
@@ -274,6 +293,101 @@ export class OrganisationsService {
       },
       data,
     });
+
+    // If role is being changed to "interviewer", create approval request
+    if (data.role === 'interviewer') {
+      let interviewerRole = await this.prisma.role.findUnique({
+        where: { name: 'interviewer' },
+      });
+
+      if (!interviewerRole) {
+        interviewerRole = await this.prisma.role.create({
+          data: { name: 'interviewer' },
+        });
+      }
+
+      // Check if user already has interviewer role
+      const existingRole = await this.prisma.userRole.findUnique({
+        where: {
+          userId_roleId: {
+            userId: userId,
+            roleId: interviewerRole.id,
+          },
+        },
+      });
+
+      if (!existingRole) {
+        // Create new pending interviewer role
+        await this.prisma.userRole.create({
+          data: {
+            userId: userId,
+            roleId: interviewerRole.id,
+            status: 'pending',
+          },
+        });
+
+        // Notify platform admin
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true, name: true },
+          });
+
+          const org = await this.prisma.organisation.findUnique({
+            where: { id: orgId },
+            select: { legalName: true },
+          });
+
+          const adminEmail = process.env.PLATFORM_ADMIN_EMAIL || 'admin@nexyre.com';
+          await this.mail.sendMail({
+            to: adminEmail,
+            subject: `New Interviewer Application: ${user.name}`,
+            html: `
+              <h2>New Interviewer Application</h2>
+              <p><strong>${user.name}</strong> (${user.email}) has been assigned the interviewer role and requires your approval.</p>
+              <p>Organization: <strong>${org.legalName}</strong></p>
+              <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/interviewers">Review applications</a></p>
+            `,
+          });
+        } catch (error) {
+          console.error('Failed to send interviewer notification email:', error);
+        }
+      } else if (existingRole.status === 'rejected') {
+        // If previously rejected, allow re-application
+        await this.prisma.userRole.update({
+          where: { id: existingRole.id },
+          data: { status: 'pending' },
+        });
+
+        // Notify platform admin
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true, name: true },
+          });
+
+          const org = await this.prisma.organisation.findUnique({
+            where: { id: orgId },
+            select: { legalName: true },
+          });
+
+          const adminEmail = process.env.PLATFORM_ADMIN_EMAIL || 'admin@nexyre.com';
+          await this.mail.sendMail({
+            to: adminEmail,
+            subject: `Interviewer Re-Application: ${user.name}`,
+            html: `
+              <h2>Interviewer Re-Application</h2>
+              <p><strong>${user.name}</strong> (${user.email}) has reapplied for the interviewer role and requires your approval.</p>
+              <p>Organization: <strong>${org.legalName}</strong></p>
+              <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/interviewers">Review applications</a></p>
+            `,
+          });
+        } catch (error) {
+          console.error('Failed to send interviewer re-application email:', error);
+        }
+      }
+      // If already approved, don't change the status
+    }
   }
 
   async removeMember(orgId: string, userId: string) {
