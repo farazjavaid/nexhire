@@ -58,3 +58,7 @@ Thumbs.db
 out
 
 test-output
+
+# Windows Zone Identifier files
+*:Zone.Identifier
+*.Zone.Identifier
