@@ -1,6 +1,5 @@
-// Prisma schema for Nexyre
-// Database: PostgreSQL hosted on Supabase
-// Docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -9,14 +8,257 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// Add your models here
-// Example:
-// model User {
-//   id        String   @id @default(cuid())
-//   email     String   @unique
-//   name      String?
-//   createdAt DateTime @default(now())
-//   updatedAt DateTime @updatedAt
-// }
+// ============= ORGANISATIONS =============
+model Organisation {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+
+  legalName         String
+  tradingName       String?
+  organisationType  String
+  industry          String?
+  countryCode       String?
+  timezone          String?
+  website           String?
+  description       String?
+  employeeRange     String?
+  logoUrl           String?
+  status            String   @default("pending")
+
+  creator           User     @relation("CreatedOrganisations", fields: [creatorId], references: [id])
+  creatorId         String
+
+  members           OrganisationMember[]
+  invites           OrganisationInvite[]
+}
+
+model OrganisationMember {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  organisation  Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisationId String
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  role          String   @default("member")
+  status        String   @default("active")
+  
+  @@unique([organisationId, userId])
+}
+
+model OrganisationInvite {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+
+  organisation  Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisationId String
+
+  email         String
+  role          String   @default("member")
+  token         String   @unique
+  status        String   @default("pending")
+}
+
+// ============= USERS =============
+model User {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  email         String   @unique
+  emailVerified DateTime?
+  password      String?
+  name          String
+  
+  profile       UserProfile?
+  
+  sessions      AuthSession[]
+  authFactors   AuthFactor[]
+  passwordHistory PasswordHistory[]
+  
+  oauthAccounts OAuthAccount[]
+  
+  passwordResets PasswordResetToken[]
+  
+  mfaChallenges MfaChallenge[]
+  
+  emailVerifications EmailVerificationToken[]
+  
+  createdOrganisations Organisation[] @relation("CreatedOrganisations")
+  organisationMemberships OrganisationMember[]
+  
+  roles         UserRole[]
+}
+
+model UserProfile {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String   @unique
+  
+  phone         String?
+  dateOfBirth   DateTime?
+  gender        String?
+  location      String?
+  bio           String?
+  profileImage  String?
+  interestKeywords String?
+}
+
+// ============= AUTHENTICATION =============
+model AuthSession {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  expiresAt     DateTime
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  ipAddress     String?
+  userAgent     String?
+}
+
+model AuthFactor {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  type          String
+  secret        String?
+  isVerified    Boolean  @default(false)
+  
+  @@unique([userId, type])
+}
+
+model PasswordHistory {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  hash          String
+}
+
+model OAuthAccount {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  provider      String
+  providerAccountId String
+  email         String?
+  name          String?
+  picture       String?
+  
+  @@unique([provider, providerAccountId])
+}
+
+model PasswordResetToken {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  token         String   @unique
+  used          Boolean  @default(false)
+}
+
+// ============= MFA =============
+model MfaChallenge {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  code          String
+  attempts      Int      @default(0)
+}
+
+// ============= EMAIL VERIFICATION =============
+model EmailVerificationToken {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  token         String   @unique
+  newEmail      String?
+  used          Boolean  @default(false)
+}
+
+// ============= ROLES & PERMISSIONS =============
+model Role {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  name          String   @unique
+  description   String?
+  
+  permissions   RolePermission[]
+  users         UserRole[]
+}
+
+model Permission {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  name          String   @unique
+  description   String?
+  
+  roles         RolePermission[]
+}
+
+model RolePermission {
+  id            String   @id @default(cuid())
+  
+  role          Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+  
+  permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permissionId  String
+  
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+
+  role          Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+
+  status        String   @default("approved")  // approved, pending (for interviewer approval)
+
+  @@unique([userId, roleId])
+}

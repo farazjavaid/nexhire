@@ -367,8 +367,9 @@ export class OrganisationsService {
         } catch (error) {
           console.error('Failed to send interviewer notification email:', error);
         }
-      } else if (existingRole.status === 'rejected') {
-        // If previously rejected, allow re-application
+      } else if (existingRole.status !== 'pending') {
+        // If role exists but not pending (approved, rejected, or any other status)
+        // Update to pending for new approval (e.g., role was approved, changed to client, then back to interviewer)
         await this.prisma.userRole.update({
           where: { id: existingRole.id },
           data: { status: 'pending' },
@@ -387,21 +388,25 @@ export class OrganisationsService {
           });
 
           const adminEmail = process.env.PLATFORM_ADMIN_EMAIL || 'admin@nexyre.com';
+          const subject = existingRole.status === 'rejected'
+            ? `Interviewer Re-Application: ${user.name}`
+            : `Interviewer Role Reassignment: ${user.name}`;
+
           await this.mail.sendMail({
             to: adminEmail,
-            subject: `Interviewer Re-Application: ${user.name}`,
+            subject: subject,
             html: `
-              <h2>Interviewer Re-Application</h2>
-              <p><strong>${user.name}</strong> (${user.email}) has reapplied for the interviewer role and requires your approval.</p>
+              <h2>${subject}</h2>
+              <p><strong>${user.name}</strong> (${user.email}) has been reassigned the interviewer role and requires your approval.</p>
               <p>Organization: <strong>${org.legalName}</strong></p>
               <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/interviewers">Review applications</a></p>
             `,
           });
         } catch (error) {
-          console.error('Failed to send interviewer re-application email:', error);
+          console.error('Failed to send interviewer notification email:', error);
         }
       }
-      // If already approved, don't change the status
+      // If status is already 'pending', don't change or email again
     }
   }
 

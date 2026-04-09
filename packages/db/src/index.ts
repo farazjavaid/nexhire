@@ -1,2 +1,2 @@
-export { prisma } from './lib/prisma';
 export { PrismaClient } from '@prisma/client';
+export { prisma } from './lib/prisma';

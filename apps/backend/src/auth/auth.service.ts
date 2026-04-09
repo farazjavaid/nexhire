@@ -250,6 +250,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         profile: user.profile,
+        hasPassword: !!user.password, // true if user has password set, false if OAuth-only
         roles: user.roles.map(ur => ({
           roleId: ur.id,
           roleName: ur.role.name,
