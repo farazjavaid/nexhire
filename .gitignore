@@ -62,3 +62,7 @@ test-output
 # Windows Zone Identifier files
 *:Zone.Identifier
 *.Zone.Identifier
+
+# Documentation/workflow files
+INTERVIEWER_APPROVAL_WORKFLOW.md
+USER_ROLE_FLOW.md
